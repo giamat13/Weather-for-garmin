@@ -10,7 +10,7 @@ import Toybox.Math;
 
 // =====================================================================
 //  WeatherMoonView — full UI rework
-//  4 swipeable screens: NOW / OUTLOOK / OUTFIT / MOON & SUN
+//  6 swipeable screens: NOW / HOURLY / OUTLOOK / OUTFIT / MOON & SUN / ALERTS
 //  Every screen is laid out top-down using REAL measured font/element
 //  heights (dc.getFontHeight, known circle radii, etc.) and accumulates
 //  a running `y` cursor - exactly like the original app's safe pattern -
@@ -27,10 +27,12 @@ const FALLBACK_LON = 34.7818d;
 
 // screens
 const SCREEN_NOW = 0;
-const SCREEN_OUTLOOK = 1;
-const SCREEN_OUTFIT = 2;
-const SCREEN_MOON = 3;
-const SCREEN_COUNT = 4;
+const SCREEN_HOURLY = 1;
+const SCREEN_OUTLOOK = 2;
+const SCREEN_OUTFIT = 3;
+const SCREEN_MOON = 4;
+const SCREEN_ALERTS = 5;
+const SCREEN_COUNT = 6;
 
 // palette
 const COLOR_BG = 0x0A1628;
@@ -87,8 +89,8 @@ class WeatherMoonView extends WatchUi.View {
         var params = {
             "latitude" => lat,
             "longitude" => lon,
-            "hourly" => "temperature_2m,weathercode",
-            "daily" => "uv_index_max,sunset",
+            "hourly" => "temperature_2m,weathercode,precipitation_probability,wind_speed_10m,wind_direction_10m,apparent_temperature",
+            "daily" => "uv_index_max,sunset,sunrise",
             "timezone" => "auto",
             "forecast_days" => 3
         };
@@ -187,9 +189,14 @@ class WeatherMoonView extends WatchUi.View {
         var hourly = wd.get("hourly") as Dictionary;
         var temps = hourly.get("temperature_2m") as Array;
         var codes = hourly.get("weathercode") as Array;
+        var precipProbArr = hourly.get("precipitation_probability") as Array?;
+        var windSpeedArr = hourly.get("wind_speed_10m") as Array?;
+        var windDirArr = hourly.get("wind_direction_10m") as Array?;
+        var feelsArr = hourly.get("apparent_temperature") as Array?;
         var daily = wd.get("daily") as Dictionary;
         var uvMaxArr = daily.get("uv_index_max") as Array;
         var sunsetArr = daily.get("sunset") as Array;
+        var sunriseArr = daily.get("sunrise") as Array?;
 
         var temp = Math.round((temps[idx] as Numeric).toFloat()).toNumber();
         var code = (codes[idx] as Numeric).toNumber();
@@ -198,12 +205,32 @@ class WeatherMoonView extends WatchUi.View {
         var category = catLabel[0] as String;
         var label = catLabel[1] as String;
 
-        // sunset parsing: "YYYY-MM-DDTHH:MM"
+        var precipProb = (precipProbArr != null && idx < precipProbArr.size())
+            ? (precipProbArr[idx] as Numeric).toNumber() : 0;
+        var windSpeed = (windSpeedArr != null && idx < windSpeedArr.size())
+            ? Math.round((windSpeedArr[idx] as Numeric).toFloat()).toNumber() : 0;
+        var windDirDeg = (windDirArr != null && idx < windDirArr.size())
+            ? (windDirArr[idx] as Numeric).toFloat() : 0.0;
+        var windDirLabel = WeatherLogic.windDirLabel(windDirDeg);
+        var feelsLike = (feelsArr != null && idx < feelsArr.size())
+            ? Math.round((feelsArr[idx] as Numeric).toFloat()).toNumber() : temp;
+
+        // sunset/sunrise parsing: "YYYY-MM-DDTHH:MM"
         var sunsetStr = sunsetArr[selectedOffset] as String;
         var tIdx = sunsetStr.find("T") as Number;
         var timePart = sunsetStr.substring(tIdx + 1, sunsetStr.length()) as String;
         var sh = (timePart.substring(0, 2) as String).toNumber() as Number;
         var sm = (timePart.substring(3, 5) as String).toNumber() as Number;
+
+        var riseH = 0;
+        var riseM = 0;
+        if (sunriseArr != null) {
+            var sunriseStr = sunriseArr[selectedOffset] as String;
+            var rIdx = sunriseStr.find("T") as Number;
+            var risePart = sunriseStr.substring(rIdx + 1, sunriseStr.length()) as String;
+            riseH = (risePart.substring(0, 2) as String).toNumber() as Number;
+            riseM = (risePart.substring(3, 5) as String).toNumber() as Number;
+        }
 
         var afterSunset = (selectedHour * 60) >= (sh * 60 + sm);
         var isSun = (category.equals("clear") || category.equals("pcloudy"));
@@ -211,12 +238,15 @@ class WeatherMoonView extends WatchUi.View {
         var stats = dayStats(wd, selectedOffset);
         var outfit = WeatherLogic.outfitFor(stats, uvMax);
         var moon = WeatherLogic.moonPhaseFor(selectedOffset);
+        var alerts = WeatherLogic.alertsFor(wd, selectedOffset, selectedHour);
 
         return {
             "temp" => temp, "code" => code, "category" => category, "label" => label,
-            "uvMax" => uvMax, "sh" => sh, "sm" => sm,
+            "uvMax" => uvMax, "sh" => sh, "sm" => sm, "riseH" => riseH, "riseM" => riseM,
             "afterSunset" => afterSunset, "isSun" => isSun,
-            "stats" => stats, "outfit" => outfit,
+            "precipProb" => precipProb, "windSpeed" => windSpeed,
+            "windDirLabel" => windDirLabel, "feelsLike" => feelsLike,
+            "stats" => stats, "outfit" => outfit, "alerts" => alerts,
             "moonIdx" => moon[0] as Number, "moonName" => moon[1] as String
         };
     }
@@ -270,10 +300,14 @@ class WeatherMoonView extends WatchUi.View {
 
         if (screen == SCREEN_NOW) {
             drawNowScreen(dc, w, h, contentBottom, snap);
+        } else if (screen == SCREEN_HOURLY) {
+            drawHourlyScreen(dc, w, h, contentBottom, wd);
         } else if (screen == SCREEN_OUTLOOK) {
             drawOutlookScreen(dc, w, h, contentBottom, wd);
         } else if (screen == SCREEN_OUTFIT) {
             drawOutfitScreen(dc, w, h, contentBottom, snap);
+        } else if (screen == SCREEN_ALERTS) {
+            drawAlertsScreen(dc, w, h, contentBottom, snap);
         } else {
             drawMoonScreen(dc, w, h, contentBottom, snap);
         }
@@ -341,6 +375,10 @@ class WeatherMoonView extends WatchUi.View {
         var afterSunset = snap.get("afterSunset") as Boolean;
         var temp = snap.get("temp") as Number;
         var label = snap.get("label") as String;
+        var feelsLike = snap.get("feelsLike") as Number;
+        var windSpeed = snap.get("windSpeed") as Number;
+        var windDirLabel = snap.get("windDirLabel") as String;
+        var precipProb = snap.get("precipProb") as Number;
 
         // reserve the hour capsule at the very bottom of the content area first
         var hourFont = Graphics.FONT_XTINY;
@@ -348,16 +386,21 @@ class WeatherMoonView extends WatchUi.View {
         var capH = dc.getFontHeight(hourFont) + 6;
         var capY = bottom - capH;
 
+        // reserve the feels-like/wind/rain info strip just above the capsule
+        var infoFont = Graphics.FONT_XTINY;
+        var infoH = dc.getFontHeight(infoFont) + 2;
+        var infoY = capY - infoH - 2;
+
         var y = 4;
         y = drawDayPill(dc, cx, y);
         y += 6;
 
         // icon badge: size itself off the remaining space so it never
-        // pushes into the hour capsule, however tall the screen is.
-        var availableForBadge = capY - y - 6;
+        // pushes into the info strip / hour capsule, however tall the screen is.
+        var availableForBadge = infoY - y - 6;
         var badgeR = availableForBadge / 3;
-        if (badgeR > 34) { badgeR = 34; }
-        if (badgeR < 18) { badgeR = 18; }
+        if (badgeR > 30) { badgeR = 30; }
+        if (badgeR < 16) { badgeR = 16; }
         var badgeCy = y + badgeR;
         dc.setColor(COLOR_CARD, Graphics.COLOR_TRANSPARENT);
         dc.fillCircle(cx, badgeCy, badgeR);
@@ -377,6 +420,13 @@ class WeatherMoonView extends WatchUi.View {
         dc.setColor(COLOR_ACCENT, Graphics.COLOR_TRANSPARENT);
         dc.drawText(cx, y, labelFont, label, Graphics.TEXT_JUSTIFY_CENTER);
 
+        // feels-like / wind / rain-chance strip (slot reserved above)
+        var infoText = "Feels " + feelsLike.toString() + "° · " +
+            windDirLabel + " " + windSpeed.toString() + "km/h · " +
+            precipProb.toString() + "%";
+        dc.setColor(COLOR_TEXT_DIM, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(cx, infoY, infoFont, infoText, Graphics.TEXT_JUSTIFY_CENTER);
+
         // hour capsule (slot reserved above)
         dc.setColor(COLOR_CARD_HI, Graphics.COLOR_TRANSPARENT);
         dc.fillRoundedRectangle(cx - 34, capY, 68, capH, capH / 2);
@@ -388,7 +438,110 @@ class WeatherMoonView extends WatchUi.View {
     }
 
     // =================================================================
-    //  SCREEN 1 — 3-DAY OUTLOOK
+    //  SCREEN 1 — HOURLY (temperature line + rain-chance bars)
+    // =================================================================
+
+    function drawHourlyScreen(dc as Graphics.Dc, w as Number, h as Number, bottom as Number, wd as Dictionary) as Void {
+        var cx = w / 2;
+        var y = 4;
+        y = drawDayPill(dc, cx, y);
+        y += 8;
+
+        var hourly = wd.get("hourly") as Dictionary;
+        var temps = hourly.get("temperature_2m") as Array;
+        var precipProbArr = hourly.get("precipitation_probability") as Array?;
+
+        var start = dayStartIndex(selectedOffset);
+        var tVals = [] as Array<Float>;
+        var pVals = [] as Array<Number>;
+        var minT = 999.0;
+        var maxT = -999.0;
+        for (var i = 0; i < 24; i++) {
+            var idx = start + i;
+            if (idx >= temps.size()) { break; }
+            var t = (temps[idx] as Numeric).toFloat();
+            tVals.add(t);
+            if (t < minT) { minT = t; }
+            if (t > maxT) { maxT = t; }
+            var p = 0;
+            if (precipProbArr != null && idx < precipProbArr.size()) {
+                p = (precipProbArr[idx] as Numeric).toNumber();
+            }
+            pVals.add(p);
+        }
+        if (maxT <= minT) { maxT = minT + 1.0; }
+
+        var count = tVals.size();
+        if (count < 2) {
+            dc.setColor(COLOR_TEXT_DIM, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cx, (y + bottom) / 2, Graphics.FONT_TINY, "No hourly data", Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+
+        var axisFont = Graphics.FONT_XTINY;
+        var axisH = dc.getFontHeight(axisFont);
+        var chartBottom = bottom - axisH - 4;
+        var chartTop = y;
+        var chartH = chartBottom - chartTop;
+        var barAreaH = chartH / 3;
+        var lineAreaH = chartH - barAreaH - 4;
+        var lineBottom = chartTop + lineAreaH;
+        var barTop = lineBottom + 4;
+        var barBottom = chartBottom;
+
+        var x0 = 12;
+        var stepX = (w - (x0 * 2)).toFloat() / (count - 1);
+
+        // rain-chance bars
+        dc.setColor(COLOR_RAIN, Graphics.COLOR_TRANSPARENT);
+        var barW = stepX * 0.6;
+        if (barW < 1.0) { barW = 1.0; }
+        var barSpan = barBottom - barTop;
+        for (var i = 0; i < count; i++) {
+            var p = pVals[i] as Number;
+            var bh = (barSpan * (p / 100.0)).toNumber();
+            if (bh <= 0) { continue; }
+            var bx = (x0 + (i * stepX) - (barW / 2)).toNumber();
+            var by = barBottom - bh;
+            dc.fillRectangle(bx, by, barW.toNumber(), bh);
+        }
+
+        // temperature line
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        var prevX = 0;
+        var prevY = 0;
+        for (var i = 0; i < count; i++) {
+            var t = tVals[i] as Float;
+            var frac = (t - minT) / (maxT - minT);
+            var px = (x0 + (i * stepX)).toNumber();
+            var py = (lineBottom - (frac * lineAreaH)).toNumber();
+            if (i > 0) {
+                dc.drawLine(prevX, prevY, px, py);
+            }
+            prevX = px;
+            prevY = py;
+        }
+        // highlight the currently selected hour
+        if (selectedHour < count) {
+            var hx = (x0 + (selectedHour * stepX)).toNumber();
+            var t2 = tVals[selectedHour] as Float;
+            var frac2 = (t2 - minT) / (maxT - minT);
+            var hy = (lineBottom - (frac2 * lineAreaH)).toNumber();
+            dc.setColor(COLOR_ACCENT, Graphics.COLOR_TRANSPARENT);
+            dc.fillCircle(hx, hy, 3);
+        }
+
+        // hour-axis labels every 6 hours
+        dc.setColor(COLOR_TEXT_DIM, Graphics.COLOR_TRANSPARENT);
+        for (var i = 0; i < count; i += 6) {
+            var lx = (x0 + (i * stepX)).toNumber();
+            var lbl = (i < 10 ? "0" : "") + i.toString();
+            dc.drawText(lx, chartBottom + 2, axisFont, lbl, Graphics.TEXT_JUSTIFY_CENTER);
+        }
+    }
+
+    // =================================================================
+    //  SCREEN 2 — 3-DAY OUTLOOK
     // =================================================================
 
     function drawOutlookScreen(dc as Graphics.Dc, w as Number, h as Number, bottom as Number, wd as Dictionary) as Void {
@@ -442,7 +595,7 @@ class WeatherMoonView extends WatchUi.View {
     }
 
     // =================================================================
-    //  SCREEN 2 — OUTFIT
+    //  SCREEN 3 — OUTFIT
     // =================================================================
 
     function drawOutfitScreen(dc as Graphics.Dc, w as Number, h as Number, bottom as Number, snap as Dictionary) as Void {
@@ -479,7 +632,7 @@ class WeatherMoonView extends WatchUi.View {
     }
 
     // =================================================================
-    //  SCREEN 3 — MOON & SUN
+    //  SCREEN 4 — MOON & SUN
     // =================================================================
 
     function drawMoonScreen(dc as Graphics.Dc, w as Number, h as Number, bottom as Number, snap as Dictionary) as Void {
@@ -492,7 +645,7 @@ class WeatherMoonView extends WatchUi.View {
         // with whatever space is left above them. cardsH is derived from
         // the actual icon radius + two real text-line heights, not a
         // fixed guess, so the card content can never spill past its edge.
-        var cardIconR = 9;
+        var cardIconR = 8;
         var cardLabelFont = Graphics.FONT_XTINY;
         var cardLabelH = dc.getFontHeight(cardLabelFont);
         var cardsH = 4 + (cardIconR * 2) + 4 + cardLabelH + cardLabelH + 4;
@@ -502,8 +655,8 @@ class WeatherMoonView extends WatchUi.View {
         var nameH = dc.getFontHeight(nameFont);
         var availableForBadge = cardsTop - y - nameH - 8;
         var moonR = availableForBadge / 2;
-        if (moonR > 30) { moonR = 30; }
-        if (moonR < 16) { moonR = 16; }
+        if (moonR > 28) { moonR = 28; }
+        if (moonR < 14) { moonR = 14; }
         var moonCy = y + moonR;
 
         dc.setColor(COLOR_CARD, Graphics.COLOR_TRANSPARENT);
@@ -514,31 +667,87 @@ class WeatherMoonView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(cx, nameY, nameFont, snap.get("moonName") as String, Graphics.TEXT_JUSTIFY_CENTER);
 
-        // sunset + UV cards side by side, in the reserved bottom slot
-        var cardW = (w - 28) / 2;
+        // sunrise + sunset + UV, three cards side by side in the reserved bottom row
+        var gap = 4;
+        var cardW = (w - (gap * 4)) / 3;
         var iconCy = cardsTop + 4 + cardIconR;
         var labelY = cardsTop + 4 + (cardIconR * 2) + 4;
         var valueY = labelY + cardLabelH;
 
+        var col0 = gap;
+        var col1 = gap + cardW + gap;
+        var col2 = gap + cardW + gap + cardW + gap;
+
+        var riseH = snap.get("riseH") as Number;
+        var riseM = snap.get("riseM") as Number;
+        var riseText = (riseH < 10 ? "0" : "") + riseH.toString() + ":" + (riseM < 10 ? "0" : "") + riseM.toString();
+        drawInfoCard(dc, col0, cardsTop, cardW, cardsH, cardIconR, iconCy, labelY, valueY,
+            cardLabelFont, "RISE", riseText, method(:drawSunsetGlyph));
+
         var sh = snap.get("sh") as Number;
         var sm = snap.get("sm") as Number;
         var sunsetText = (sh < 10 ? "0" : "") + sh.toString() + ":" + (sm < 10 ? "0" : "") + sm.toString();
-        dc.setColor(COLOR_CARD, Graphics.COLOR_TRANSPARENT);
-        dc.fillRoundedRectangle(cx - cardW - 4, cardsTop, cardW, cardsH, 10);
-        drawSunsetGlyph(dc, cx - cardW - 4 + (cardW / 2), iconCy, cardIconR);
-        dc.setColor(COLOR_TEXT_DIM, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx - cardW - 4 + (cardW / 2), labelY, cardLabelFont, "SUNSET", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx - cardW - 4 + (cardW / 2), valueY, cardLabelFont, sunsetText, Graphics.TEXT_JUSTIFY_CENTER);
+        drawInfoCard(dc, col1, cardsTop, cardW, cardsH, cardIconR, iconCy, labelY, valueY,
+            cardLabelFont, "SET", sunsetText, method(:drawSunsetGlyph));
 
         var uvMax = snap.get("uvMax") as Float;
+        drawInfoCard(dc, col2, cardsTop, cardW, cardsH, cardIconR, iconCy, labelY, valueY,
+            cardLabelFont, "UV", Math.round(uvMax).toNumber().toString(), method(:drawUvGlyph));
+    }
+
+    // Small reusable info-card drawer shared by the sunrise/sunset/UV cards.
+    function drawInfoCard(dc as Graphics.Dc, x0 as Number, top as Number, cardW as Number, cardH as Number,
+        iconR as Number, iconCy as Number, labelY as Number, valueY as Number,
+        font as Graphics.FontDefinition, label as String, value as String,
+        iconFn as Method) as Void {
+        var colCx = x0 + (cardW / 2);
         dc.setColor(COLOR_CARD, Graphics.COLOR_TRANSPARENT);
-        dc.fillRoundedRectangle(cx + 4, cardsTop, cardW, cardsH, 10);
-        drawUvGlyph(dc, cx + 4 + (cardW / 2), iconCy, cardIconR);
+        dc.fillRoundedRectangle(x0, top, cardW, cardH, 10);
+        iconFn.invoke(dc, colCx, iconCy, iconR);
         dc.setColor(COLOR_TEXT_DIM, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx + 4 + (cardW / 2), labelY, cardLabelFont, "UV INDEX", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(colCx, labelY, font, label, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx + 4 + (cardW / 2), valueY, cardLabelFont, Math.round(uvMax).toNumber().toString(), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(colCx, valueY, font, value, Graphics.TEXT_JUSTIFY_CENTER);
+    }
+
+    // =================================================================
+    //  SCREEN 5 — ALERTS
+    // =================================================================
+
+    function drawAlertsScreen(dc as Graphics.Dc, w as Number, h as Number, bottom as Number, snap as Dictionary) as Void {
+        var cx = w / 2;
+        var y = 4;
+        y = drawScreenTitle(dc, cx, y, "Alerts");
+        y += 8;
+
+        var alerts = snap.get("alerts") as Array<String>;
+        if (alerts == null || alerts.size() == 0) {
+            dc.setColor(COLOR_TEXT_DIM, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cx, (y + bottom) / 2, Graphics.FONT_TINY, "No alerts right now",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+
+        var available = bottom - y;
+        var rowH = available / alerts.size();
+        if (rowH > 40) { rowH = 40; }
+        var totalH = rowH * alerts.size();
+        var startY = y + ((available - totalH) / 2);
+        var font = rowH >= 30 ? Graphics.FONT_TINY : Graphics.FONT_XTINY;
+        var cardW = w - 24;
+        var cardX0 = cx - (cardW / 2);
+
+        for (var i = 0; i < alerts.size(); i++) {
+            var rowY = startY + (i * rowH);
+            var rowCy = rowY + (rowH / 2);
+            dc.setColor(COLOR_CARD_HI, Graphics.COLOR_TRANSPARENT);
+            dc.fillRoundedRectangle(cardX0, rowY + 1, cardW, rowH - 3, 8);
+            dc.setColor(COLOR_SUN, Graphics.COLOR_TRANSPARENT);
+            dc.fillCircle(cardX0 + 16, rowCy, 4);
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cardX0 + 30, rowCy, font, alerts[i] as String,
+                Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
+        }
     }
 
     // =================================================================
