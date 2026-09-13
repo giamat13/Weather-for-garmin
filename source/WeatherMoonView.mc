@@ -678,28 +678,34 @@ class WeatherMoonView extends WatchUi.View {
         var col1 = gap + cardW + gap;
         var col2 = gap + cardW + gap + cardW + gap;
 
+        var cardLayout = [cardsTop, cardW, cardsH, cardIconR, iconCy, labelY, valueY, cardLabelFont];
+
         var riseH = snap.get("riseH") as Number;
         var riseM = snap.get("riseM") as Number;
         var riseText = (riseH < 10 ? "0" : "") + riseH.toString() + ":" + (riseM < 10 ? "0" : "") + riseM.toString();
-        drawInfoCard(dc, col0, cardsTop, cardW, cardsH, cardIconR, iconCy, labelY, valueY,
-            cardLabelFont, "RISE", riseText, method(:drawSunsetGlyph));
+        drawInfoCard(dc, col0, cardLayout, "RISE", riseText, method(:drawSunsetGlyph));
 
         var sh = snap.get("sh") as Number;
         var sm = snap.get("sm") as Number;
         var sunsetText = (sh < 10 ? "0" : "") + sh.toString() + ":" + (sm < 10 ? "0" : "") + sm.toString();
-        drawInfoCard(dc, col1, cardsTop, cardW, cardsH, cardIconR, iconCy, labelY, valueY,
-            cardLabelFont, "SET", sunsetText, method(:drawSunsetGlyph));
+        drawInfoCard(dc, col1, cardLayout, "SET", sunsetText, method(:drawSunsetGlyph));
 
         var uvMax = snap.get("uvMax") as Float;
-        drawInfoCard(dc, col2, cardsTop, cardW, cardsH, cardIconR, iconCy, labelY, valueY,
-            cardLabelFont, "UV", Math.round(uvMax).toNumber().toString(), method(:drawUvGlyph));
+        drawInfoCard(dc, col2, cardLayout, "UV", Math.round(uvMax).toNumber().toString(), method(:drawUvGlyph));
     }
 
     // Small reusable info-card drawer shared by the sunrise/sunset/UV cards.
-    function drawInfoCard(dc as Graphics.Dc, x0 as Number, top as Number, cardW as Number, cardH as Number,
-        iconR as Number, iconCy as Number, labelY as Number, valueY as Number,
-        font as Graphics.FontDefinition, label as String, value as String,
-        iconFn as Method) as Void {
+    function drawInfoCard(dc as Graphics.Dc, x0 as Number, layout as Array,
+        label as String, value as String, iconFn as Method) as Void {
+        var top = layout[0] as Number;
+        var cardW = layout[1] as Number;
+        var cardH = layout[2] as Number;
+        var iconR = layout[3] as Number;
+        var iconCy = layout[4] as Number;
+        var labelY = layout[5] as Number;
+        var valueY = layout[6] as Number;
+        var font = layout[7] as Graphics.FontDefinition;
+
         var colCx = x0 + (cardW / 2);
         dc.setColor(COLOR_CARD, Graphics.COLOR_TRANSPARENT);
         dc.fillRoundedRectangle(x0, top, cardW, cardH, 10);
