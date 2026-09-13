@@ -1,0 +1,9 @@
+{
+    "monkeyC.developerKeyPath": "C:\\Users\\Giamat13\\code\\Weather-for-garmin\\developer_key.der",
+    "monkeyC.jungleFiles": "monkey.jungle",
+    "monkeyC.outputPath": "${workspaceRoot}/bin",
+    "monkeyC.releaseBuild": false,
+    "monkeyC.testBuild": false,
+    "monkeyC.typeCheckLevel": "Informative",
+    "monkeyC.currentDevice": "vivoactive4s"
+}

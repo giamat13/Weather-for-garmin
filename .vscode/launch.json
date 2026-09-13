@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "monkeyc",
+            "request": "launch",
+            "name": "Run Current Project in Simulator",
+            "program": "${workspaceFolder}/bin/optimized.prg",
+            "manifest": "${workspaceFolder}/manifest.xml",
+            "developerKeyPath": "${workspaceFolder}/developer_key.der",
+            "compilerOptions": "-w",
+            "simulateFirstConnect": false
+        }
+    ]
+}
