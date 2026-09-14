@@ -1,4 +1,5 @@
 import Toybox.WatchUi;
+import Toybox.Application;
 import Toybox.Graphics;
 import Toybox.Communications;
 import Toybox.Position;
@@ -21,9 +22,6 @@ const DAY_LABELS = ["Today", "Tomorrow", "Day after"] as Array<String>;
 const WAKE_START_HOUR = 7;
 const WAKE_END_HOUR = 21;
 
-// Fallback location (Tel Aviv) used if positioning has no fix yet.
-const FALLBACK_LAT = 32.0853d;
-const FALLBACK_LON = 34.7818d;
 
 // screens
 const SCREEN_NOW = 0;
@@ -48,6 +46,7 @@ class WeatherMoonView extends WatchUi.View {
 
     var weatherData as Dictionary?;
     var loadError as Boolean = false;
+    var errorCode as Number = 0;
     var loading as Boolean = true;
 
     var selectedOffset as Number = 0;
@@ -66,19 +65,23 @@ class WeatherMoonView extends WatchUi.View {
 
     function requestLocationAndWeather() as Void {
         var lastFix = Position.getInfo();
-        if (lastFix != null && lastFix.position != null) {
+        // Real devices return a non-null position (180,180) with QUALITY_NOT_AVAILABLE when there's no fix.
+        if (lastFix != null && lastFix.position != null && lastFix.accuracy != Position.QUALITY_NOT_AVAILABLE) {
             var pos = lastFix.position as Position.Location;
             var loc = pos.toDegrees();
             fetchWeather(loc[0].toDouble(), loc[1].toDouble());
         } else {
             // No fix yet (always the case in the simulator): show fallback now, refine when GPS arrives.
-            fetchWeather(FALLBACK_LAT, FALLBACK_LON);
+            // Fallback location from app settings (default Tel Aviv) until GPS arrives.
+            fetchWeather(
+                (Application.Properties.getValue("FallbackLat") as Numeric).toDouble(),
+                (Application.Properties.getValue("FallbackLon") as Numeric).toDouble());
             Position.enableLocationEvents(Position.LOCATION_ONE_SHOT, method(:onPosition));
         }
     }
 
     function onPosition(info as Position.Info) as Void {
-        if (info.position != null) {
+        if (info.position != null && info.accuracy != Position.QUALITY_NOT_AVAILABLE) {
             var loc = (info.position as Position.Location).toDegrees();
             fetchWeather(loc[0].toDouble(), loc[1].toDouble());
         }
@@ -104,11 +107,14 @@ class WeatherMoonView extends WatchUi.View {
 
     function onWeatherResponse(responseCode as Number, data as Dictionary?) as Void {
         loading = false;
+        System.println("weather response " + responseCode);
         if (responseCode == 200 && data != null) {
             weatherData = data;
             loadError = false;
-        } else {
+        } else if (weatherData == null) {
+            // keep showing earlier good data if a later (GPS-refined) fetch fails
             loadError = true;
+            errorCode = responseCode;
         }
         WatchUi.requestUpdate();
     }
@@ -286,7 +292,7 @@ class WeatherMoonView extends WatchUi.View {
             return;
         }
         if (loadError || weatherData == null) {
-            drawStatusScreen(dc, w, h, "Weather unavailable", Graphics.COLOR_RED);
+            drawStatusScreen(dc, w, h, "Weather unavailable\n(" + errorCode + ")", Graphics.COLOR_RED);
             return;
         }
 

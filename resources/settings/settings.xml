@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<resources>
+  <properties>
+    <property id="FallbackLat" type="float">32.0853</property>
+    <property id="FallbackLon" type="float">34.7818</property>
+  </properties>
+  <settings>
+    <setting propertyKey="@Properties.FallbackLat" title="@Strings.FallbackLatTitle">
+      <settingConfig type="numeric" min="-90" max="90" />
+    </setting>
+    <setting propertyKey="@Properties.FallbackLon" title="@Strings.FallbackLonTitle">
+      <settingConfig type="numeric" min="-180" max="180" />
+    </setting>
+  </settings>
+</resources>
