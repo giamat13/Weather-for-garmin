@@ -3,6 +3,7 @@
   <properties>
     <property id="FallbackLat" type="float">32.0853</property>
     <property id="FallbackLon" type="float">34.7818</property>
+    <property id="UseFahrenheit" type="boolean">false</property>
   </properties>
   <settings>
     <setting propertyKey="@Properties.FallbackLat" title="@Strings.FallbackLatTitle">
@@ -10,6 +11,9 @@
     </setting>
     <setting propertyKey="@Properties.FallbackLon" title="@Strings.FallbackLonTitle">
       <settingConfig type="numeric" min="-180" max="180" />
+    </setting>
+    <setting propertyKey="@Properties.UseFahrenheit" title="@Strings.UseFahrenheitTitle">
+      <settingConfig type="boolean" />
     </setting>
   </settings>
 </resources>

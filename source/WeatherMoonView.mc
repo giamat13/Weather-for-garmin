@@ -95,7 +95,8 @@ class WeatherMoonView extends WatchUi.View {
             "hourly" => "temperature_2m,weathercode,precipitation_probability,wind_speed_10m,wind_direction_10m,apparent_temperature",
             "daily" => "uv_index_max,sunset,sunrise",
             "timezone" => "auto",
-            "forecast_days" => 3
+            "forecast_days" => 3,
+            "temperature_unit" => (Application.Properties.getValue("UseFahrenheit") as Boolean) ? "fahrenheit" : "celsius"
         };
         var options = {
             :method => Communications.HTTP_REQUEST_METHOD_GET,

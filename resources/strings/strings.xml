@@ -4,5 +4,6 @@
     <string id="AppName">Weather and Moon</string>
     <string id="FallbackLatTitle">Fallback latitude (used without GPS)</string>
     <string id="FallbackLonTitle">Fallback longitude (used without GPS)</string>
+    <string id="UseFahrenheitTitle">Use Fahrenheit (instead of Celsius)</string>
   </strings>
 </resources>
